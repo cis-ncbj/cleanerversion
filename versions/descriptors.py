@@ -47,6 +47,13 @@ class VersionedForwardManyToOneDescriptor(ForwardManyToOneDescriptor):
     ``team.city`` is a VersionedForwardManyToOneDescriptor
     """
 
+    def get_object(self, instance):
+        qs = self.get_queryset(instance=instance)
+        if not qs.querytime.active:
+            qs = qs.as_of(None)
+        # Assuming the database enforces foreign keys, this won't fail.
+        return qs.get(self.field.get_reverse_related_filter(instance))
+
     def get_prefetch_queryset(self, instances, queryset=None):
         """
          Overrides the parent method to:
