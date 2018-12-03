@@ -195,7 +195,7 @@ class VersionedReverseManyToOneDescriptor(ReverseManyToOneDescriptor):
                 # This is a hack, in order to get the versioned related objects
                 for key in self.core_filters.keys():
                     if '__exact' in key or '__' not in key:
-                        self.core_filters[key] = instance.identity
+                        self.core_filters[key] = instance.id
 
             def get_queryset(self):
                 from versions.models import VersionedQuerySet
