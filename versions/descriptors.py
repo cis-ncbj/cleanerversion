@@ -61,6 +61,9 @@ class VersionedForwardManyToOneDescriptor(ForwardManyToOneDescriptor):
          - ensure that the join is done on identity, not id
          - make the cache key identity, not id.
          """
+        identifier = 'identity'
+        if self.field.auto_m2m or self.field.auto_created:
+            identifier = 'id'
         if queryset is None:
             queryset = self.get_queryset()
         queryset._add_hints(instance=instances[0])
@@ -87,13 +90,15 @@ class VersionedForwardManyToOneDescriptor(ForwardManyToOneDescriptor):
             return versioned_rel_obj.identity,
 
         rel_obj_attr = versioned_fk_rel_obj_attr
+        if self.field.auto_m2m or self.field.auto_created:
+            rel_obj_attr = self.field.get_foreign_related_value
         instance_attr = self.field.get_local_related_value
         instances_dict = {instance_attr(inst): inst for inst in instances}
         # CleanerVersion change 3: fake the related field so that it provides
         # a name of 'identity'.
         # related_field = self.field.foreign_related_fields[0]
         related_field = namedtuple('VersionedRelatedFieldTuple', 'name')(
-            'identity')
+            identifier)
 
         # FIXME: This will need to be revisited when we introduce support for
         # composite fields. In the meantime we take this practical approach to
@@ -195,7 +200,11 @@ class VersionedReverseManyToOneDescriptor(ReverseManyToOneDescriptor):
                 # This is a hack, in order to get the versioned related objects
                 for key in self.core_filters.keys():
                     if '__exact' in key or '__' not in key:
-                        self.core_filters[key] = instance.id
+                        if not self.field.auto_created and \
+                                not self.field.auto_m2m:
+                            self.core_filters[key] = instance.identity
+                        else:
+                            self.core_filters[key] = instance.id
 
             def get_queryset(self):
                 from versions.models import VersionedQuerySet
@@ -228,6 +237,10 @@ class VersionedReverseManyToOneDescriptor(ReverseManyToOneDescriptor):
                     from versions.models import VersionManager
                     queryset = VersionManager.get_queryset(self)
 
+                identifier = 'identity'
+                if rel_field.auto_m2m or rel_field.auto_created:
+                    identifier = 'id'
+
                 queryset._add_hints(instance=instances[0])
                 queryset = queryset.using(queryset._db or self._db)
                 instance_querytime = instances[0]._querytime
@@ -245,9 +258,13 @@ class VersionedReverseManyToOneDescriptor(ReverseManyToOneDescriptor):
                 instance_attr = rel_field.get_foreign_related_value
                 # Use identities instead of ids so that this will work with
                 # versioned objects.
-                instances_dict = {(inst.identity,): inst for inst in instances}
-                identities = [inst.identity for inst in instances]
-                query = {'%s__identity__in' % rel_field.name: identities}
+                instances_dict = {
+                    (getattr(inst, identifier),): inst for inst in instances
+                }
+                identities = [getattr(inst, identifier) for inst in instances]
+                query = {
+                    '%s__%s__in' % (rel_field.name, identifier): identities
+                }
                 queryset = queryset.filter(**query)
 
                 # Since we just bypassed this class' get_queryset(), we must

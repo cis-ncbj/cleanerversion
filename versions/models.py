@@ -905,6 +905,49 @@ class Versionable(models.Model):
             [r for r in m2m_rels
              if hasattr(r, '_not_created') and r._not_created])
 
+        # A hack to handle self m2m relation with through table.
+        # Where reverse relation has separate instances that require
+        # synchronization.
+        if not (hasattr(source.through.objects, 'reverse_through_pairs')
+                and source.through.objects.reverse_through_pairs):
+            return
+
+        m2m_rels = list(destination.through.objects.filter(
+            **{destination.target_field.attname: clone.id}))
+        later_current = []
+        later_non_current = []
+        for rel in m2m_rels:
+            # Only clone the relationship, if it is the current one; Simply
+            # adjust the older ones to point the old entry.
+            # Otherwise, the number of pointers pointing an entry will grow
+            # exponentially
+            if rel.is_current:
+                later_current.append(
+                    rel.clone(forced_version_date=self.version_end_date,
+                              in_bulk=True))
+                # On rel, which is no more 'current', set the source ID to
+                # self.id
+                setattr(rel, destination.target_field_name, self)
+            else:
+                later_non_current.append(rel)
+        # Perform the bulk changes rel.clone() did not perform because of the
+        # in_bulk parameter.
+        # This saves a huge bunch of SQL queries:
+        # - update current version entries
+        destination.through.objects.filter(
+            id__in=[l.id for l in later_current]).update(
+            **{'version_start_date': forced_version_date})
+        # - update entries that have been pointing the current object, but
+        #   have never been 'current'
+        destination.through.objects.filter(
+            id__in=[l.id for l in later_non_current]).update(
+            **{destination.target_field_name: self})
+        # - create entries that were 'current', but which have been relieved
+        #   in this method run
+        destination.through.objects.bulk_create(
+            [r for r in m2m_rels
+             if hasattr(r, '_not_created') and r._not_created])
+
     def restore(self, **kwargs):
         """
         Restores this version as a new version, and returns this new version.

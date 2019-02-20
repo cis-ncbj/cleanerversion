@@ -21,8 +21,10 @@ class VersionedForeignKey(ForeignKey):
     be restricted based on that.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, auto_m2m=False, **kwargs):
         super(VersionedForeignKey, self).__init__(*args, **kwargs)
+        # A hack to make M2M with through tables work
+        self.auto_m2m = auto_m2m
 
     def contribute_to_class(self, cls, name, virtual_only=False):
         super(VersionedForeignKey, self).contribute_to_class(cls, name,
@@ -80,10 +82,12 @@ class VersionedForeignKey(ForeignKey):
             # - self is the current ForeignKey relationship
             # - self was not auto_created (e.g. is not part of a M2M
             #   relationship)
-            if self is lhs_field and not self.auto_created:
+            if self is lhs_field and not self.auto_created and \
+                    not self.auto_m2m:
                 if rhs_col_name == Versionable.VERSION_IDENTIFIER_FIELD:
                     rhs_col_name = Versionable.OBJECT_IDENTIFIER_FIELD
-            elif self is rhs_field and not self.auto_created:
+            elif self is rhs_field and not self.auto_created and \
+                    not self.auto_m2m:
                 if lhs_col_name == Versionable.VERSION_IDENTIFIER_FIELD:
                     lhs_col_name = Versionable.OBJECT_IDENTIFIER_FIELD
             joining_columns = joining_columns + ((lhs_col_name, rhs_col_name),)
@@ -97,6 +101,8 @@ class VersionedForeignKey(ForeignKey):
                     rh_field.attname == \
                     Versionable.VERSION_IDENTIFIER_FIELD:
                 base_filter.update(**{
+                    # TODO should this be changed to
+                    # VERSION_IDENTIFIER_FIELD in some cases
                     Versionable.OBJECT_IDENTIFIER_FIELD:
                         getattr(obj, lh_field.attname)})
                 if hasattr(obj, 'as_of') and obj.as_of is not None:
