@@ -99,7 +99,8 @@ class VersionedForeignKey(ForeignKey):
         for lh_field, rh_field in self.related_fields:
             if isinstance(obj, Versionable) and \
                     rh_field.attname == \
-                    Versionable.VERSION_IDENTIFIER_FIELD:
+                    Versionable.VERSION_IDENTIFIER_FIELD and \
+                    not lh_field.auto_m2m:
                 base_filter.update(**{
                     # TODO should this be changed to
                     # VERSION_IDENTIFIER_FIELD in some cases
